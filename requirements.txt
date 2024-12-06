@@ -2,3 +2,4 @@ python-telegram-bot
 together
 python-dotenv
 flask
+Gunicorn
