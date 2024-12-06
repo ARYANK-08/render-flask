@@ -1,0 +1,4 @@
+Flask
+Gunicorn
+together
+python-telegram-bot
