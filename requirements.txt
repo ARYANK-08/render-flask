@@ -1,5 +1,3 @@
-Flask
-Gunicorn
-together
 python-telegram-bot
+together
 python-dotenv
