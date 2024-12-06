@@ -54,9 +54,9 @@ class ImageGenerationBot:
             "- Multiple Quality Options\n"
             "- Easy Social Sharing\n\n"
             "Examples:\n"
-            "- A futuristic cityscape at sunset\n"
-            "- A cute robot playing chess\n"
-            "- Underwater scene with bioluminescent creatures\n\n"
+            "Anime waifu coding on a futuristic laptop in a neon-lit cafe\n"
+            "A cyberpunk samurai playing chess with a neon dragon\n"
+            "A robot cat riding a skateboard through a galaxy made of donuts\n"
             "Get creative and let's generate some art! 🚀"
         )
         
@@ -80,31 +80,45 @@ class ImageGenerationBot:
             reply_markup=reply_markup
         )
 
-    async def quality_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        query = update.callback_query
-        await query.answer()
-        quality = query.data.split('_')[1]
-        prompt = context.user_data.get('current_prompt', 'A beautiful scene')
-        loading_message = await query.message.reply_text(f"🔄 Generating {quality.capitalize()} Quality Image... Please wait!")
-        try:
-            response = self.together_client.images.generate(
-                prompt=prompt,
-                **self.quality_params[quality]
-            )
-            image_data = base64.b64decode(response.data[0].b64_json)
-            share_keyboard = [
-                [
-                    InlineKeyboardButton("🐦 Share on Twitter", url=f"https://twitter.com/intent/tweet?text=Check%20out%20this%20AI-generated%20image!%20Created%20with%20@AIImageBot%20-%20Prompt:%20{prompt}"),
-                    InlineKeyboardButton("💼 Share on LinkedIn", url=f"https://www.linkedin.com/sharing/share-offsite/?url=&text=Check%20out%20this%20AI-generated%20image!%20Created%20with%20AI%20Image%20Generator%20-%20Prompt:%20{prompt}")
-                ]
+async def quality_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    quality = query.data.split('_')[1]
+    prompt = context.user_data.get('current_prompt', 'A beautiful scene')
+    loading_message = await query.message.reply_text(f"🔄 Generating {quality.capitalize()} Quality Image... Please wait!")
+    
+    try:
+        response = self.together_client.images.generate(
+            prompt=prompt,
+            **self.quality_params[quality]
+        )
+        image_data = base64.b64decode(response.data[0].b64_json)
+        
+        # Upload the image to Telegram servers and get a file_id (this URL is the shared image)
+        photo_message = await query.message.reply_photo(photo=image_data)
+        image_url = f'https://t.me/{query.message.chat.username}/{photo_message.message_id}'
+        
+        share_keyboard = [
+            [
+                InlineKeyboardButton(
+                    "🐦 Share on Twitter", 
+                    url=f"https://twitter.com/intent/tweet?text=Check%20out%20this%20AI-generated%20image!%20Created%20with%20@AIImageBot%20-%20Prompt:%20{prompt}%20%0A%20%0A%20{image_url}"
+                ),
+                InlineKeyboardButton(
+                    "💼 Share on LinkedIn", 
+                    url=f"https://www.linkedin.com/sharing/share-offsite/?url={image_url}&text=Check%20out%20this%20AI-generated%20image!%20Created%20with%20AI%20Image%20Generator%20-%20Prompt:%20{prompt}"
+                )
             ]
-            share_markup = InlineKeyboardMarkup(share_keyboard)
-            await query.message.reply_photo(photo=image_data, caption=f"🖼️ {quality.capitalize()} Quality Image\nPrompt: *{prompt}*", parse_mode='Markdown', reply_markup=share_markup)
-        except Exception as e:
-            error_message = "❌ Oops! Something went wrong during image generation.\nError: {str(e)}\n\nPlease try again with a different prompt."
-            await query.message.reply_text(error_message)
-        finally:
-            await loading_message.delete()
+        ]
+        share_markup = InlineKeyboardMarkup(share_keyboard)
+        await query.message.reply_photo(photo=image_data, caption=f"🖼️ {quality.capitalize()} Quality Image\nPrompt: *{prompt}*", parse_mode='Markdown', reply_markup=share_markup)
+
+    except Exception as e:
+        error_message = f"❌ Oops! Something went wrong during image generation.\nError: {str(e)}\n\nPlease try again with a different prompt."
+        await query.message.reply_text(error_message)
+    finally:
+        await loading_message.delete()
+
 
     def setup_handlers(self, application: Application):
         application.add_handler(CommandHandler("start", self.start))
