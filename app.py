@@ -1,9 +1,15 @@
 import os
 import base64
 import logging
-from flask import Flask, request, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler, ContextTypes
+from telegram.ext import (
+    Application, 
+    CommandHandler, 
+    MessageHandler, 
+    filters,
+    CallbackQueryHandler,
+    ContextTypes
+)
 from together import Together
 from dotenv import load_dotenv
 
@@ -14,35 +20,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Initialize Flask app
-app = Flask(__name__)
-
-# Load environment variables
-load_dotenv()
-
-# Retrieve API credentials
-telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
-together_api_key = os.getenv('TOGETHER_API_KEY')
-
-# Validate credentials
-if not telegram_token or not together_api_key:
-    logger.error("Missing API credentials. Check your .env file.")
-    exit()
-
-# Initialize Together client
-together_client = Together(api_key=together_api_key)
-
 class ImageGenerationBot:
-    def __init__(self, telegram_token: str, together_client):
+    def __init__(self, telegram_token: str, together_api_key: str):
         """
         Initialize the bot with enhanced image generation capabilities
         
         :param telegram_token: Telegram Bot API Token
-        :param together_client: Together API client
+        :param together_api_key: Together AI API Key
         """
         self.telegram_token = telegram_token
-        self.together_client = together_client
+        self.together_client = Together(api_key=together_api_key)
         
+        # Enhanced image generation parameters with quality options
         self.quality_params = {
             "low": {
                 "model": "black-forest-labs/FLUX.1-dev",
@@ -95,8 +84,10 @@ class ImageGenerationBot:
         """
         Generate an image with quality selection and sharing options
         """
+        # Store the prompt in context for later use
         context.user_data['current_prompt'] = update.message.text
         
+        # Create quality selection keyboard
         quality_keyboard = [
             [
                 InlineKeyboardButton("🌱 Low Quality (512x384)", callback_data="quality_low"),
@@ -120,21 +111,26 @@ class ImageGenerationBot:
         query = update.callback_query
         await query.answer()
         
+        # Extract quality from callback data
         quality = query.data.split('_')[1]
         prompt = context.user_data.get('current_prompt', 'A beautiful scene')
         
+        # Send "generating" message
         loading_message = await query.message.reply_text(
             f"🔄 Generating {quality.capitalize()} Quality Image... Please wait!"
         )
 
         try:
+            # Generate image using Together AI with selected quality
             response = self.together_client.images.generate(
                 prompt=prompt,
                 **self.quality_params[quality]
             )
 
+            # Decode base64 image
             image_data = base64.b64decode(response.data[0].b64_json)
 
+            # Create sharing keyboard
             share_keyboard = [
                 [
                     InlineKeyboardButton("🐦 Share on Twitter", 
@@ -145,6 +141,7 @@ class ImageGenerationBot:
             ]
             share_markup = InlineKeyboardMarkup(share_keyboard)
 
+            # Send the generated image with sharing options
             await query.message.reply_photo(
                 photo=image_data, 
                 caption=f"🖼️ {quality.capitalize()} Quality Image\nPrompt: *{prompt}*",
@@ -153,6 +150,7 @@ class ImageGenerationBot:
             )
 
         except Exception as e:
+            # Handle errors
             error_message = (
                 "❌ Oops! Something went wrong during image generation.\n"
                 f"Error: {str(e)}\n\n"
@@ -161,6 +159,7 @@ class ImageGenerationBot:
             await query.message.reply_text(error_message)
 
         finally:
+            # Delete loading message
             await loading_message.delete()
 
     def setup_handlers(self, application: Application):
@@ -183,25 +182,29 @@ class ImageGenerationBot:
             )
         )
 
-# Flask route to handle webhook
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    if request.method == "POST":
-        data = request.json
-        update = Update.de_json(data, application.bot)
-        application.update_queue.put(update)
-        return jsonify({"status": "success"}), 200
-
 def main():
-    # Create Telegram application instance
+    # Load environment variables
+    load_dotenv()
+
+    # Retrieve API credentials
+    telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
+    together_api_key = os.getenv('TOGETHER_API_KEY')
+
+    # Validate credentials
+    if not telegram_token or not together_api_key:
+        logger.error("Missing API credentials. Check your .env file.")
+        return
+
+    # Create bot application
     application = Application.builder().token(telegram_token).build()
-    
+
     # Initialize and setup bot
-    bot = ImageGenerationBot(telegram_token, together_client)
+    bot = ImageGenerationBot(telegram_token, together_api_key)
     bot.setup_handlers(application)
 
-    # Start polling in a separate thread for Flask
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    # Start the bot
+    logger.info("Bot is running. Press Ctrl+C to stop.")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
     main()
